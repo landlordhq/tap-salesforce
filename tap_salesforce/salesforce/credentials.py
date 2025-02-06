@@ -94,6 +94,7 @@ class SalesforceAuthOAuth(SalesforceAuth):
                 self._login_url,
                 data=self._login_body,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=30,
             )
 
             resp.raise_for_status()

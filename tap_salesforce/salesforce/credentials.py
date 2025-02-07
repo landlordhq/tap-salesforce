@@ -2,8 +2,11 @@ import logging
 import threading
 from collections import namedtuple
 
+import backoff
 import requests
 from simple_salesforce import SalesforceLogin
+
+from tap_salesforce.salesforce import log_backoff_attempt
 
 LOGGER = logging.getLogger(__name__)
 
@@ -77,6 +80,13 @@ class SalesforceAuthOAuth(SalesforceAuth):
 
         return login_url
 
+    @backoff.on_exception(
+        backoff.expo,
+        requests.exceptions.HTTPError,
+        max_tries=10,
+        factor=2,
+        on_backoff=log_backoff_attempt,
+    )
     def login(self):
         try:
             LOGGER.info("Attempting login via OAuth2")

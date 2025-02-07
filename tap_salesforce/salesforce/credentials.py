@@ -6,15 +6,14 @@ import backoff
 import requests
 from simple_salesforce import SalesforceLogin
 
-from tap_salesforce.salesforce import log_backoff_attempt
-
 LOGGER = logging.getLogger(__name__)
-
 
 OAuthCredentials = namedtuple("OAuthCredentials", ("client_id", "client_secret", "refresh_token"))
 
 PasswordCredentials = namedtuple("PasswordCredentials", ("username", "password", "security_token"))
 
+def log_backoff_attempt(details):
+    LOGGER.info("HTTPError detected, triggering backoff: %d try", details.get("tries"))
 
 def parse_credentials(config):
     for cls in reversed((OAuthCredentials, PasswordCredentials)):

@@ -526,6 +526,7 @@ def main_impl():
         elif args.properties or args.catalog:
             catalog = args.properties or args.catalog.to_dict()
             state = build_state(args.state, catalog)
+            singer.write_state(state)
             sf.login()
             do_sync(sf, catalog, state)
     finally:

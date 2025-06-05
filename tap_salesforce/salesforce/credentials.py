@@ -79,40 +79,40 @@ class SalesforceAuthOAuth(SalesforceAuth):
 
         return login_url
 
-    @backoff.on_exception(
-        backoff.expo,
-        requests.exceptions.RequestException,
-        max_tries=10,
-        factor=2,
-        on_backoff=log_backoff_attempt,
-    )
     def login(self):
-        resp = None
-        try:
-            LOGGER.info("Attempting login via OAuth2")
+        LOGGER.info("Attempting login via OAuth2")
 
-            resp = requests.post(
-                self._login_url,
-                data=self._login_body,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                timeout=30,
-            )
+        @backoff.on_exception(
+            backoff.expo,
+            Exception,
+            max_tries=10,
+            factor=2,
+            on_backoff=log_backoff_attempt,
+        )
+        def _login():
+            resp = None
+            try:
+                resp = requests.post(
+                    self._login_url,
+                    data=self._login_body,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    timeout=30,
+                )
 
-            resp.raise_for_status()
-            auth = resp.json()
+                resp.raise_for_status()
+                return resp.json()
+            except Exception as e:
+                if resp:
+                    LOGGER.error(f"Response from Salesforce: {resp.text}")
+                raise e
 
-            LOGGER.info("OAuth2 login successful")
-            self._access_token = auth["access_token"]
-            self._instance_url = auth["instance_url"]
-        except Exception as e:
-            error_message = str(e)
-            if resp:
-                error_message = error_message + f", Response from Salesforce: {resp.text}"
-            raise Exception(error_message) from e
-        finally:
-            LOGGER.info("Starting new login timer")
-            self.login_timer = threading.Timer(self.REFRESH_TOKEN_EXPIRATION_PERIOD, self.login)
-            self.login_timer.start()
+        auth = _login()
+        LOGGER.info("OAuth2 login successful")
+        self._access_token = auth["access_token"]
+        self._instance_url = auth["instance_url"]
+        LOGGER.info("Starting new login timer")
+        self.login_timer = threading.Timer(self.REFRESH_TOKEN_EXPIRATION_PERIOD, self.login)
+        self.login_timer.start()
 
 
 class SalesforceAuthPassword(SalesforceAuth):

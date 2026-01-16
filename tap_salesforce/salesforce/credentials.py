@@ -12,10 +12,25 @@ OAuthCredentials = namedtuple("OAuthCredentials", ("client_id", "client_secret",
 
 PasswordCredentials = namedtuple("PasswordCredentials", ("username", "password", "security_token"))
 
+JWTCredentials = namedtuple("JWTCredentials", ("username", "consumer_key", "private_key"))
+
+
 def log_backoff_attempt(details):
     LOGGER.info("HTTPError detected, triggering backoff: %d try", details.get("tries"))
 
+
 def parse_credentials(config):
+    # Explicit JWT auth flag takes priority
+    use_jwt_auth = config.get("use_jwt_auth")
+    if use_jwt_auth is True or (isinstance(use_jwt_auth, str) and use_jwt_auth.lower() in ("true", "1")):
+        creds = JWTCredentials(*(config.get(key) for key in JWTCredentials._fields))
+        if all(creds):
+            return creds
+        raise Exception(
+            "use_jwt_auth is enabled but missing required JWT credentials: username, consumer_key, private_key"
+        )
+
+    # Fall back to existing inference for backward compatibility
     for cls in reversed((OAuthCredentials, PasswordCredentials)):
         creds = cls(*(config.get(key) for key in cls._fields))
         if all(creds):
@@ -58,6 +73,9 @@ class SalesforceAuth:
 
         if isinstance(credentials, PasswordCredentials):
             return SalesforceAuthPassword(credentials, **kwargs)
+
+        if isinstance(credentials, JWTCredentials):
+            return SalesforceAuthJWT(credentials, **kwargs)
 
         raise Exception("Invalid credentials")
 
@@ -121,3 +139,35 @@ class SalesforceAuthPassword(SalesforceAuth):
 
         self._access_token, host = login
         self._instance_url = "https://" + host
+
+
+class SalesforceAuthJWT(SalesforceAuth):
+    # Refresh before token expiration (Salesforce tokens typically expire after 2 hours)
+    TOKEN_REFRESH_PERIOD = 900
+
+    def login(self):
+        LOGGER.info("Attempting login via JWT Bearer")
+
+        @backoff.on_exception(
+            backoff.expo,
+            Exception,
+            max_tries=10,
+            factor=2,
+            on_backoff=log_backoff_attempt,
+        )
+        def _login():
+            domain = "test" if self.is_sandbox else "login"
+            return SalesforceLogin(
+                username=self._credentials.username,
+                consumer_key=self._credentials.consumer_key,
+                privatekey=self._credentials.private_key,
+                domain=domain,
+            )
+
+        access_token, host = _login()
+        LOGGER.info("JWT Bearer login successful")
+        self._access_token = access_token
+        self._instance_url = "https://" + host
+        LOGGER.info("Starting new login timer")
+        self.login_timer = threading.Timer(self.TOKEN_REFRESH_PERIOD, self.login)
+        self.login_timer.start()

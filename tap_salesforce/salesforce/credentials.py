@@ -14,6 +14,7 @@ PasswordCredentials = namedtuple("PasswordCredentials", ("username", "password",
 
 JWTCredentials = namedtuple("JWTCredentials", ("username", "consumer_key", "private_key"))
 
+
 def log_backoff_attempt(details):
     LOGGER.info("HTTPError detected, triggering backoff: %d try", details.get("tries"))
 
@@ -145,23 +146,28 @@ class SalesforceAuthJWT(SalesforceAuth):
     TOKEN_REFRESH_PERIOD = 900
 
     def login(self):
-        try:
-            LOGGER.info("Attempting login via JWT Bearer")
+        LOGGER.info("Attempting login via JWT Bearer")
 
+        @backoff.on_exception(
+            backoff.expo,
+            Exception,
+            max_tries=10,
+            factor=2,
+            on_backoff=log_backoff_attempt,
+        )
+        def _login():
             domain = "test" if self.is_sandbox else "login"
-            login = SalesforceLogin(
+            return SalesforceLogin(
                 username=self._credentials.username,
                 consumer_key=self._credentials.consumer_key,
                 privatekey=self._credentials.private_key,
                 domain=domain,
             )
 
-            self._access_token, host = login
-            self._instance_url = "https://" + host
-            LOGGER.info("JWT Bearer login successful")
-        except Exception as e:
-            raise Exception(f"JWT Bearer authentication failed: {e}") from e
-        finally:
-            LOGGER.info("Starting new login timer")
-            self.login_timer = threading.Timer(self.TOKEN_REFRESH_PERIOD, self.login)
-            self.login_timer.start()
+        access_token, host = _login()
+        LOGGER.info("JWT Bearer login successful")
+        self._access_token = access_token
+        self._instance_url = "https://" + host
+        LOGGER.info("Starting new login timer")
+        self.login_timer = threading.Timer(self.TOKEN_REFRESH_PERIOD, self.login)
+        self.login_timer.start()

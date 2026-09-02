@@ -53,6 +53,16 @@ pip install git+https://github.com/MeltanoLabs/tap-salesforce.git
 }
 ```
 
+**Required for OAuth JWT bearer authentication**
+```
+{
+  "use_jwt_auth": true,
+  "jwt_client_id": "connected_app_consumer_key",
+  "jwt_username": "integration.user@example.com",
+  "jwt_private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
+}
+```
+
 **Optional**
 ```
 {
@@ -64,6 +74,8 @@ pip install git+https://github.com/MeltanoLabs/tap-salesforce.git
 ```
 
 The `client_id` and `client_secret` keys are your OAuth Salesforce App secrets. The `refresh_token` is a secret created during the OAuth flow. For more info on the Salesforce OAuth flow, visit the [Salesforce documentation](https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/intro_understanding_web_server_oauth_flow.htm).
+
+When `use_jwt_auth` is `true` (or the string `"true"`), the tap ignores the other credential keys and uses the [OAuth 2.0 JWT bearer flow](https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_jwt_flow.htm): it signs an RS256 assertion with `jwt_private_key` (the PEM private key whose certificate is uploaded to the connected app identified by `jwt_client_id`) for the user `jwt_username`, and exchanges it for an access token. No client secret or refresh token is involved, so concurrent tap runs cannot invalidate each other's tokens. `jwt_private_key` may carry literal `\n` sequences in place of newlines (as a key pasted into a single-line environment variable does); the tap normalizes them and fails at startup if the key does not parse. When the flag is absent or false, the existing OAuth/password inference applies unchanged.
 
 The `start_date` is used by the tap as a bound on SOQL queries when searching for records.  This should be an [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) formatted date-time, like "2018-01-08T00:00:00Z". For more details, see the [Singer best practices for dates](https://github.com/singer-io/getting-started/blob/master/BEST_PRACTICES.md#dates).
 

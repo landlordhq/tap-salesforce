@@ -14,6 +14,7 @@ from singer import metadata, metrics
 import tap_salesforce.salesforce
 from tap_salesforce.salesforce import Salesforce
 from tap_salesforce.salesforce.credentials import (
+    JwtCredentials,
     OAuthCredentials,
     PasswordCredentials,
     parse_credentials,
@@ -46,6 +47,12 @@ OAUTH_CONFIG_KEYS = OAuthCredentials._fields
 # - password
 # - security_token
 PASSWORD_CONFIG_KEYS = PasswordCredentials._fields
+
+# JWT bearer (selected with use_jwt_auth):
+# - jwt_client_id
+# - jwt_username
+# - jwt_private_key
+JWT_CONFIG_KEYS = JwtCredentials._fields
 
 CONFIG = {
     "refresh_token": None,
@@ -519,13 +526,15 @@ def main_impl():
             default_start_date=CONFIG.get("start_date"),
             api_type=CONFIG.get("api_type"),
         )
-        sf.login()
 
         if args.discover:
+            sf.login()
             do_discover(sf, CONFIG.get("streams_to_discover", []))
         elif args.properties or args.catalog:
             catalog = args.properties or args.catalog.to_dict()
             state = build_state(args.state, catalog)
+            singer.write_state(state)
+            sf.login()
             do_sync(sf, catalog, state)
     finally:
         if sf:
